@@ -1,5 +1,6 @@
 import { Schema, model } from 'mongoose';
 
+// Required fields keep seed fixtures and API validation meaningful.
 const userSchema = new Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, trim: true, lowercase: true },
