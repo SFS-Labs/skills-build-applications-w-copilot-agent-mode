@@ -1,17 +1,15 @@
+import mongoose from 'mongoose';
 import { connectDatabase, disconnectDatabase } from '../config/database.js';
 import { Activity, Team, User, Workout } from '../models/index.js';
 
-// Seed stable demo records without clearing data owned by the application.
-async function upsertDemoUser(name: string, email: string, teamId: InstanceType<typeof Team>['_id'], fitnessGoal: string) {
+async function upsertTeam(name: string, mascot: string) {
+  return Team.findOneAndUpdate({ name }, { $set: { name, mascot }, $setOnInsert: { members: [] } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+}
+
+async function upsertDemoUser(name: string, email: string, teamId: mongoose.Types.ObjectId, fitnessGoal: string) {
   const previousUser = await User.findOne({ email }).select('_id team');
-  if (previousUser?.team && previousUser.team.toString() !== teamId.toString()) {
-    await Team.updateOne({ _id: previousUser.team }, { $pull: { members: previousUser._id } });
-  }
-  const user = await User.findOneAndUpdate(
-    { email },
-    { $set: { name, email, team: teamId, fitnessGoal } },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  );
+  if (previousUser?.team && previousUser.team.toString() !== teamId.toString()) await Team.updateOne({ _id: previousUser.team }, { $pull: { members: previousUser._id } });
+  const user = await User.findOneAndUpdate({ email }, { $set: { name, email, team: teamId, fitnessGoal } }, { upsert: true, new: true, setDefaultsOnInsert: true });
   await Team.updateOne({ _id: teamId }, { $addToSet: { members: user._id } });
   return user;
 }
@@ -19,46 +17,28 @@ async function upsertDemoUser(name: string, email: string, teamId: InstanceType<
 export async function seed() {
   await connectDatabase();
   try {
-    const octocats = await Team.findOneAndUpdate(
-      { name: 'Octocats' },
-      { $set: { name: 'Octocats', mascot: 'Mona' } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    const robocats = await Team.findOneAndUpdate(
-      { name: 'Robocats' },
-      { $set: { name: 'Robocats', mascot: 'Hubot' } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    const octocats = await upsertTeam('Octocats', 'Mona');
+    const robocats = await upsertTeam('Robocats', 'Hubot');
+    await upsertTeam('Codecats', 'Copilot');
+    await upsertTeam('Trailblazers', 'Compass');
     const mona = await upsertDemoUser('Mona', 'mona@example.com', octocats._id, 'endurance');
     const hubot = await upsertDemoUser('Hubot', 'hubot@example.com', robocats._id, 'strength');
-
-    const monaRunAt = new Date('2026-01-10T12:00:00.000Z');
-    const hubotCycleAt = new Date('2026-01-11T12:00:00.000Z');
-    await Activity.updateOne(
-      { user: mona._id, team: octocats._id, type: 'run', occurredAt: monaRunAt },
-      { $set: { user: mona._id, team: octocats._id, type: 'run', minutes: 40, points: 40, occurredAt: monaRunAt } },
-      { upsert: true },
-    );
-    await Activity.updateOne(
-      { user: hubot._id, team: robocats._id, type: 'cycle', occurredAt: hubotCycleAt },
-      { $set: { user: hubot._id, team: robocats._id, type: 'cycle', minutes: 25, points: 25, occurredAt: hubotCycleAt } },
-      { upsert: true },
-    );
-    await Workout.updateOne(
-      { title: 'Intervals' },
-      { $set: { title: 'Intervals', focus: 'endurance', minutes: 30, difficulty: 'moderate' } },
-      { upsert: true },
-    );
-    await Workout.updateOne(
-      { title: 'Strength Circuit' },
-      { $set: { title: 'Strength Circuit', focus: 'strength', minutes: 30, difficulty: 'moderate' } },
-      { upsert: true },
-    );
+    const octavia = await upsertDemoUser('Octavia', 'octavia@example.com', octocats._id, 'mobility');
+    const activities = [
+      { user: mona._id, team: octocats._id, type: 'run', minutes: 40, points: 40, occurredAt: new Date('2026-01-10T12:00:00.000Z') },
+      { user: hubot._id, team: robocats._id, type: 'cycle', minutes: 25, points: 25, occurredAt: new Date('2026-01-11T12:00:00.000Z') },
+      { user: octavia._id, team: octocats._id, type: 'walk', minutes: 20, points: 20, occurredAt: new Date('2026-01-12T12:00:00.000Z') },
+    ];
+    for (const activity of activities) await Activity.updateOne({ user: activity.user, team: activity.team, type: activity.type, occurredAt: activity.occurredAt }, { $set: activity }, { upsert: true });
+    const workouts = [
+      { title: 'Intervals', focus: 'endurance', minutes: 30, difficulty: 'moderate' },
+      { title: 'Strength Circuit', focus: 'strength', minutes: 30, difficulty: 'moderate' },
+      { title: 'Mobility Flow', focus: 'mobility', minutes: 20, difficulty: 'easy' },
+    ];
+    for (const workout of workouts) await Workout.updateOne({ title: workout.title }, { $set: workout }, { upsert: true });
   } finally {
     await disconnectDatabase();
   }
 }
 
-if (process.argv[1]?.endsWith('seed.ts')) {
-  await seed();
-}
+if (process.argv[1]?.endsWith('seed.ts')) await seed();
